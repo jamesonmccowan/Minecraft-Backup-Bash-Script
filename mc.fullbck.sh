@@ -82,6 +82,7 @@ function srv_check () {
 
 function log () {
 	echo "[${LOGSTAMP}] ${@}" >> $LOGFILE
+    echo "[${LOGSTAMP}] ${@}"
 }
 
 #Kill minecraft server, but post $MSG to server $TIME before shutdown and warn 5 seconds before shutdown. If "stop" don't work, kill $PID.
@@ -91,18 +92,21 @@ function kill_mc() {
 	screen -S $SCREEN -p 0 -X stuff "`printf "save-all\r"`"; sleep 5
 	screen -S $SCREEN -p 0 -X stuff "`printf "stop\r"`"; sleep 5
 	srv_check
+    
 	if [ $ONLINE == 1 ]; then
 		log "Minecraft server shutdown successfully."
 	else
 		log "Minecraft server did NOT shutdown, will try with force."
 		local PID=$(ps -e | grep "java -Xms$JXMS -Xmx$JXMX -jar $MCSRV $GUI" | grep -v grep | awk '{print $1;}')
 		local STOP=$TRIES
+
 		while [[ $STOP -gt 0 && $ONLINE == 2 ]]; do
 			log "Try #${STOP} of stopping minecraft server."
 			kill $PID
 			srv_check
 			STOP=$(($STOP-1))
 		done
+        
 		if [ $STOP == 0 ]; then
 			log "Could not kill minecraft server, exiting"
 			exit 2
@@ -111,24 +115,29 @@ function kill_mc() {
 		fi
 	fi
 }
+
 #Start minecraft server with $PARAMS
 function start_mc() {
 	function java_start() {
 		screen -S $SCREEN -p 0 -X stuff "`printf "cd $MCDIR\r"`"; sleep 1
 		screen -S $SCREEN -p 0 -X stuff "`printf "java -Xms$JXMS -Xmx$JXMX -jar $MCSRV $GUI\r"`"; sleep 3
 	}
+
 	local PARAMS="screen -dmS $SCREEN java -Xms$JXMS -Xmx$JXMX -jar $MCSRV $GUI"
 	java_start
 	srv_check
+
 	if [ $ONLINE == 2 ]; then
 		log "Server started successfully with ${PARAMS}."
 	else
 		log "Server did not start, trying again."
 		local START=0
 		local SCREXIST=$(ps aux | grep "SCREEN -dmS $SCREEN" | wc -l)
+
 		while [[ $START -lt 3 && $ONLINE == 1 ]]; do
 			log "Try #"$START" of starting minecraft server."
 			SCREXIST=$(ps aux | grep "SCREEN -dmS $SCREEN" | wc -l)
+
 			if [ $SCREXIST == 1 ]; then
 				log "Screen session not found, starting screen with -dmS ${SCREEN}."
 				screen -dmS $SCREEN; sleep 1
@@ -136,9 +145,11 @@ function start_mc() {
 			else
 				java_start
 			fi
+
 			srv_check
 			START=$(($START+1))
 		done
+
 		if [ $START == 3 ]; then
 			log "Server did not start after ${START} number of tries, exiting."
 			exit 1
@@ -149,26 +160,28 @@ function start_mc() {
 		fi
 	fi
 }
-function run_backup() {
-#Backup dir, output to $LOG
-tar -czf $OF $BUDIR
-if [ $? == 0 ]; then
-	log "TAR of ${BUDIR} to ${OF} was successful."
-elif [ $? == 1 ]; then
-	log "TAR of ${BUDIR} to ${OF} was successful, but backup is not 100% of ${BUDIR}, most likely because it was changed during reading."
-else
-	log "TAR of ${BUDIR} to ${OF} was NOT successful, reason: ${?} FATAL ERROR."
-fi
-#SCP backup to $BCKSRV, output to $LOG
-scp $OF $BCKSRV:$BCKDIR
-if [ $? == 0 ]; then
-	log "SCP of ${OF} to ${BCKSRV} was successful."
-else
-	log "SCP of ${OF} to ${BCKSRV} was NOT successful, reason: ${?}:Some error ocurred."
-fi
 
-log "Proceeding to start server..."
-start_mc
+function run_backup() {
+    #Backup dir, output to $LOG
+    tar -czf $OF $BUDIR
+    if [ $? == 0 ]; then
+	    log "TAR of ${BUDIR} to ${OF} was successful."
+    elif [ $? == 1 ]; then
+	    log "TAR of ${BUDIR} to ${OF} was successful, but backup is not 100% of ${BUDIR}, most likely because it was changed during reading."
+    else
+	    log "TAR of ${BUDIR} to ${OF} was NOT successful, reason: ${?} FATAL ERROR."
+    fi
+
+    #SCP backup to $BCKSRV, output to $LOG
+    scp $OF $BCKSRV:$BCKDIR
+    if [ $? == 0 ]; then
+	    log "SCP of ${OF} to ${BCKSRV} was successful."
+    else
+	    log "SCP of ${OF} to ${BCKSRV} was NOT successful, reason: ${?}:Some error ocurred."
+    fi
+
+    log "Proceeding to start server..."
+    start_mc
 }
 
 #Is minecraft server running? yes - stop then continue, no - continue
@@ -178,32 +191,47 @@ case "$1" in
 		srv_check
 		if [ $ONLINE == 2 ]; then
 			kill_mc
-		if [ $ONLINE == 1 ]; then
-			run_backup
-		fi
+    		if [ $ONLINE == 1 ]; then
+	    		run_backup
+		    fi
 		else
 			run_backup
 		fi
-	;;
+    	;;
+
 	restart)
 		srv_check
 		if [ $ONLINE == 2 ]; then
 			kill_mc
 		fi
-		start_mc
-	;;
+		    start_mc
+    	;;
+
 	stop)
 		kill_mc
 	;;
+
 	start)
 		start_mc
 	;;
+
 	status)
 		srv_check
 		if [ $ONLINE == 2 ]; then
 			echo "Server is running"
+        fi
  		if [ $ONLINE == 1 ]; then
 			echo "Server is not running"
 		fi
-	;;
+	    ;;
+
+    *)
+       echo "Minecraft backup script"
+       echo " - to backup server      > {script} backup"
+       echo " - to restart server     > {script} restart"
+       echo " - to stop server        > {script} stop"
+       echo " - to start server       > {script} start"
+       echo " - to show server status > {script} status"
+       ;;
+
 esac
